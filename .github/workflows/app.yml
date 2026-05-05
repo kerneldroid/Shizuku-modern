@@ -1,9 +1,7 @@
 name: App
 
 on:
-  push:
-    paths-ignore:
-      - '.github/ISSUE_TEMPLATE'
+  workflow_dispatch:
 
 jobs:
   build:
@@ -22,12 +20,23 @@ jobs:
           java-version: '21'
       - name: Write key
         if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEYSTORE_ALIAS: ${{ secrets.KEYSTORE_ALIAS }}
+          KEYSTORE_ALIAS_PASSWORD: ${{ secrets.KEYSTORE_ALIAS_PASSWORD }}
         run: |
-          echo KEYSTORE_PASSWORD=${{ secrets.KEYSTORE_PASSWORD }} > signing.properties
-          echo KEYSTORE_ALIAS=${{ secrets.KEYSTORE_ALIAS }} >> signing.properties
-          echo KEYSTORE_ALIAS_PASSWORD='${{ secrets.KEYSTORE_ALIAS_PASSWORD }}' >> signing.properties
-          echo KEYSTORE_FILE=../key.jks >> signing.properties
-          echo ${{ secrets.KEYSTORE }} | base64 --decode > key.jks
+          if [ -z "$KEYSTORE_BASE64" ] || [ -z "$KEYSTORE_PASSWORD" ] || [ -z "$KEYSTORE_ALIAS" ] || [ -z "$KEYSTORE_ALIAS_PASSWORD" ]; then
+            echo "Signing secrets are not configured; using debug signing fallback."
+            exit 0
+          fi
+          {
+            printf 'KEYSTORE_PASSWORD=%s\n' "$KEYSTORE_PASSWORD"
+            printf 'KEYSTORE_ALIAS=%s\n' "$KEYSTORE_ALIAS"
+            printf 'KEYSTORE_ALIAS_PASSWORD=%s\n' "$KEYSTORE_ALIAS_PASSWORD"
+            printf 'KEYSTORE_FILE=../key.jks\n'
+          } > signing.properties
+          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > key.jks
       - name: Setup Android SDK
         run: |
           yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses > /dev/null || true
