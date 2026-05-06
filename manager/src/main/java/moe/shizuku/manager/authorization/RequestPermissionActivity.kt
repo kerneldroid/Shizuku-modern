@@ -1,18 +1,27 @@
 package moe.shizuku.manager.authorization
 
-import android.app.Dialog
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import android.os.Bundle
 import android.text.method.LinkMovementMethod
 import android.widget.TextView
-import androidx.appcompat.app.AlertDialog
+import androidx.activity.compose.setContent
+import androidx.appcompat.app.AlertDialog as AppCompatAlertDialog
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import moe.shizuku.manager.Helps
 import moe.shizuku.manager.R
 import moe.shizuku.manager.app.AppActivity
-import moe.shizuku.manager.databinding.ConfirmationDialogBinding
 import moe.shizuku.manager.ktx.toHtml
+import moe.shizuku.manager.ui.compose.ShizukuExpressiveTheme
+import moe.shizuku.manager.ui.compose.htmlToPlainText
 import moe.shizuku.manager.utils.Logger.LOGGER
 import rikka.core.res.resolveColor
 import rikka.html.text.HtmlCompat
@@ -25,8 +34,6 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.TimeoutException
 
 class RequestPermissionActivity : AppActivity() {
-
-    private lateinit var dialog: Dialog
 
     private fun setResult(requestUid: Int, requestPid: Int, requestCode: Int, allowed: Boolean, onetime: Boolean) {
         val data = Bundle()
@@ -54,7 +61,7 @@ class RequestPermissionActivity : AppActivity() {
                 .setOnDismissListener { finish() }
                 .create()
         dialog.setOnShowListener {
-            (it as AlertDialog).findViewById<TextView>(android.R.id.message)?.movementMethod = LinkMovementMethod.getInstance()
+            (it as AppCompatAlertDialog).findViewById<TextView>(android.R.id.message)?.movementMethod = LinkMovementMethod.getInstance()
         }
         try {
             dialog.show()
@@ -111,25 +118,54 @@ class RequestPermissionActivity : AppActivity() {
             ai.packageName
         }
 
-        val binding = ConfirmationDialogBinding.inflate(layoutInflater).apply {
-            button1.setOnClickListener {
-                setResult(uid, pid, requestCode, allowed = true, onetime = false)
-                dialog.dismiss()
+        setContent {
+            ShizukuExpressiveTheme {
+                AlertDialog(
+                    onDismissRequest = {},
+                    icon = {
+                        Icon(
+                            painter = painterResource(R.drawable.ic_system_icon),
+                            contentDescription = null
+                        )
+                    },
+                    title = {
+                        Text(stringResource(R.string.app_name))
+                    },
+                    text = {
+                        Text(
+                            text = htmlToPlainText(
+                                getString(
+                                    R.string.permission_warning_template,
+                                    label,
+                                    getString(R.string.permission_group_description)
+                                )
+                            )
+                        )
+                    },
+                    confirmButton = {
+                        Button(
+                            onClick = {
+                                setResult(uid, pid, requestCode, allowed = true, onetime = false)
+                                finish()
+                            }
+                        ) {
+                            Text(stringResource(R.string.grant_dialog_button_allow_always))
+                        }
+                    },
+                    dismissButton = {
+                        TextButton(
+                            onClick = {
+                                setResult(uid, pid, requestCode, allowed = false, onetime = true)
+                                finish()
+                            }
+                        ) {
+                            Text(stringResource(R.string.grant_dialog_button_deny))
+                        }
+                    },
+                    containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    shape = MaterialTheme.shapes.extraLarge
+                )
             }
-            button3.setOnClickListener {
-                setResult(uid, pid, requestCode, allowed = false, onetime = true)
-                dialog.dismiss()
-            }
-            title.text = HtmlCompat.fromHtml(getString(R.string.permission_warning_template,
-                    label, getString(R.string.permission_group_description)))
         }
-
-        dialog = MaterialAlertDialogBuilder(this)
-                .setView(binding.root)
-                .setCancelable(false)
-                .setOnDismissListener { finish() }
-                .create()
-        dialog.setCanceledOnTouchOutside(false)
-        dialog.show()
     }
 }

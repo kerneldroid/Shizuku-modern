@@ -1,26 +1,314 @@
+@file:OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+
 package moe.shizuku.manager.settings
 
-import android.content.res.Resources
+import android.content.ComponentName
+import android.os.Build
 import android.os.Bundle
+import android.text.TextUtils
+import androidx.activity.compose.setContent
+import androidx.appcompat.app.AppCompatDelegate
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.RadioButton
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringArrayResource
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.dp
 import moe.shizuku.manager.R
-import moe.shizuku.manager.app.AppBarFragmentActivity
+import moe.shizuku.manager.ShizukuSettings
+import moe.shizuku.manager.ShizukuSettings.KEEP_START_ON_BOOT
+import moe.shizuku.manager.ShizukuSettings.LANGUAGE
+import moe.shizuku.manager.ShizukuSettings.NIGHT_MODE
+import moe.shizuku.manager.app.AppActivity
+import moe.shizuku.manager.app.ThemeHelper
+import moe.shizuku.manager.app.ThemeHelper.KEY_BLACK_NIGHT_THEME
+import moe.shizuku.manager.app.ThemeHelper.KEY_USE_SYSTEM_COLOR
+import moe.shizuku.manager.ktx.isComponentEnabled
+import moe.shizuku.manager.ktx.setComponentEnabled
+import moe.shizuku.manager.receiver.BootCompleteReceiver
+import moe.shizuku.manager.ui.compose.GroupDivider
+import moe.shizuku.manager.ui.compose.SettingsGroup
+import moe.shizuku.manager.ui.compose.SettingsRow
+import moe.shizuku.manager.ui.compose.ShizukuExpressiveTheme
+import moe.shizuku.manager.ui.compose.ShizukuLazyScaffold
+import moe.shizuku.manager.ui.compose.SwitchSettingsRow
+import moe.shizuku.manager.ui.compose.htmlToPlainText
+import moe.shizuku.manager.utils.CustomTabsHelper
+import rikka.core.util.ResourceUtils
+import rikka.material.app.LocaleDelegate
+import rikka.shizuku.manager.ShizukuLocales
+import java.util.Locale
 
-class SettingsActivity : AppBarFragmentActivity() {
-
-    override fun onApplyUserThemeResource(theme: Resources.Theme, isDecorView: Boolean) {
-        super.onApplyUserThemeResource(theme, isDecorView)
-        theme.applyStyle(R.style.ThemeOverlay_Rikka_Material3_Preference, true)
-    }
+class SettingsActivity : AppActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        supportActionBar?.setDisplayHomeAsUpEnabled(true)
+        val componentName = ComponentName(packageName, BootCompleteReceiver::class.java.name)
 
-        if (savedInstanceState == null) {
-            supportFragmentManager.beginTransaction()
-                    .replace(R.id.fragment_container, SettingsFragment())
-                    .commit()
+        setContent {
+            val prefs = ShizukuSettings.getPreferences()
+            var startOnBoot by remember {
+                mutableStateOf(packageManager.isComponentEnabled(componentName))
+            }
+            var languageTag by remember {
+                mutableStateOf(prefs.getString(LANGUAGE, "SYSTEM") ?: "SYSTEM")
+            }
+            var nightMode by remember {
+                mutableIntStateOf(ShizukuSettings.getNightMode())
+            }
+            var blackNightTheme by remember {
+                mutableStateOf(ThemeHelper.isBlackNightTheme(this))
+            }
+            var useSystemColor by remember {
+                mutableStateOf(ThemeHelper.isUsingSystemColor())
+            }
+            var showLanguageDialog by remember { mutableStateOf(false) }
+            var showNightDialog by remember { mutableStateOf(false) }
+
+            val localeOptions = remember(languageTag) {
+                buildLocaleOptions(languageTag)
+            }
+            val languageSummary = localeOptions.firstOrNull { it.tag == languageTag }?.summary
+                ?: stringResource(R.string.follow_system)
+            val nightValues = resources.getIntArray(R.array.night_mode_value).toList()
+            val nightLabels = stringArrayResource(R.array.night_mode).toList()
+            val nightSummary = nightLabels.getOrElse(nightValues.indexOf(nightMode)) {
+                stringResource(R.string.follow_system)
+            }
+            val contributors = htmlToPlainText(getString(R.string.translation_contributors))
+
+            ShizukuExpressiveTheme {
+                ShizukuLazyScaffold(
+                    title = stringResource(R.string.settings_title),
+                    onNavigateUp = { finish() }
+                ) {
+                    item {
+                        SettingsGroup(title = stringResource(R.string.settings_startup)) {
+                            SwitchSettingsRow(
+                                icon = R.drawable.ic_server_restart,
+                                title = stringResource(R.string.settings_start_on_boot),
+                                summary = stringResource(R.string.settings_start_on_boot_summary),
+                                checked = startOnBoot,
+                                onCheckedChange = { enabled ->
+                                    packageManager.setComponentEnabled(componentName, enabled)
+                                    startOnBoot = packageManager.isComponentEnabled(componentName)
+                                }
+                            )
+                        }
+                    }
+
+                    item {
+                        SettingsGroup(title = stringResource(R.string.settings_language)) {
+                            SettingsRow(
+                                icon = R.drawable.ic_outline_translate_24,
+                                title = stringResource(R.string.settings_language),
+                                summary = languageSummary,
+                                onClick = { showLanguageDialog = true }
+                            )
+                            GroupDivider()
+                            if (contributors.isNotBlank()) {
+                                SettingsRow(
+                                    icon = R.drawable.ic_outline_info_24,
+                                    title = stringResource(R.string.settings_translation_contributors),
+                                    summary = contributors
+                                )
+                                GroupDivider()
+                            }
+                            SettingsRow(
+                                icon = R.drawable.ic_baseline_link_24,
+                                title = stringResource(R.string.settings_translation),
+                                summary = stringResource(
+                                    R.string.settings_translation_summary,
+                                    stringResource(R.string.app_name)
+                                ),
+                                onClick = {
+                                    CustomTabsHelper.launchUrlOrCopy(this@SettingsActivity, getString(R.string.translation_url))
+                                }
+                            )
+                        }
+                    }
+
+                    item {
+                        SettingsGroup(title = stringResource(R.string.settings_user_interface)) {
+                            SettingsRow(
+                                icon = R.drawable.ic_outline_dark_mode_24,
+                                title = stringResource(R.string.dark_theme),
+                                summary = nightSummary,
+                                onClick = { showNightDialog = true }
+                            )
+                            if (nightMode != AppCompatDelegate.MODE_NIGHT_NO) {
+                                GroupDivider()
+                                SwitchSettingsRow(
+                                    icon = R.drawable.ic_outline_dark_mode_24,
+                                    title = stringResource(R.string.settings_black_night_theme),
+                                    summary = stringResource(R.string.settings_black_night_theme_summary),
+                                    checked = blackNightTheme,
+                                    onCheckedChange = { enabled ->
+                                        prefs.edit().putBoolean(KEY_BLACK_NIGHT_THEME, enabled).apply()
+                                        blackNightTheme = enabled
+                                        if (ResourceUtils.isNightMode(resources.configuration)) {
+                                            recreate()
+                                        }
+                                    }
+                                )
+                            }
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                                GroupDivider()
+                                SwitchSettingsRow(
+                                    icon = R.drawable.ic_settings_outline_24dp,
+                                    title = stringResource(R.string.settings_use_system_color),
+                                    checked = useSystemColor,
+                                    onCheckedChange = { enabled ->
+                                        prefs.edit().putBoolean(KEY_USE_SYSTEM_COLOR, enabled).apply()
+                                        useSystemColor = enabled
+                                        recreate()
+                                    }
+                                )
+                            }
+                        }
+                    }
+                }
+
+                if (showLanguageDialog) {
+                    ChoiceDialog(
+                        title = stringResource(R.string.settings_language),
+                        choices = localeOptions.map { it.title to it.summary },
+                        selectedIndex = localeOptions.indexOfFirst { it.tag == languageTag },
+                        onDismiss = { showLanguageDialog = false },
+                        onSelect = { index ->
+                            val tag = localeOptions[index].tag
+                            prefs.edit().putString(LANGUAGE, tag).apply()
+                            languageTag = tag
+                            LocaleDelegate.defaultLocale = if (tag == "SYSTEM") {
+                                LocaleDelegate.systemLocale
+                            } else {
+                                Locale.forLanguageTag(tag)
+                            }
+                            showLanguageDialog = false
+                            recreate()
+                        }
+                    )
+                }
+
+                if (showNightDialog) {
+                    ChoiceDialog(
+                        title = stringResource(R.string.dark_theme),
+                        choices = nightValues.mapIndexed { index, _ ->
+                            nightLabels[index] to null
+                        },
+                        selectedIndex = nightValues.indexOf(nightMode),
+                        onDismiss = { showNightDialog = false },
+                        onSelect = { index ->
+                            val value = nightValues[index]
+                            prefs.edit().putInt(NIGHT_MODE, value).apply()
+                            nightMode = value
+                            AppCompatDelegate.setDefaultNightMode(value)
+                            showNightDialog = false
+                            recreate()
+                        }
+                    )
+                }
+            }
         }
     }
+
+    private data class LocaleOption(
+        val tag: String,
+        val title: String,
+        val summary: String?
+    )
+
+    private fun buildLocaleOptions(currentTag: String): List<LocaleOption> {
+        val localeTags = ShizukuLocales.LOCALES
+        val displayLocaleTags = ShizukuLocales.DISPLAY_LOCALES
+        val currentLocale = ShizukuSettings.getLocale()
+
+        return localeTags.mapIndexed { index, tag ->
+            if (index == 0) {
+                LocaleOption(tag.toString(), getString(R.string.follow_system), null)
+            } else {
+                val locale = Locale.forLanguageTag(displayLocaleTags[index].toString())
+                val localeName = if (!TextUtils.isEmpty(locale.script)) {
+                    locale.getDisplayScript(locale)
+                } else {
+                    locale.getDisplayName(locale)
+                }
+                val localizedLocaleName = if (!TextUtils.isEmpty(locale.script)) {
+                    locale.getDisplayScript(currentLocale)
+                } else {
+                    locale.getDisplayName(currentLocale)
+                }
+                LocaleOption(
+                    tag = tag.toString(),
+                    title = if (tag.toString() == currentTag) localizedLocaleName else localeName,
+                    summary = if (tag.toString() == currentTag || localeName == localizedLocaleName) {
+                        null
+                    } else {
+                        localizedLocaleName
+                    }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ChoiceDialog(
+    title: String,
+    choices: List<Pair<String, String?>>,
+    selectedIndex: Int,
+    onDismiss: () -> Unit,
+    onSelect: (Int) -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title) },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 420.dp)
+                    .verticalScroll(rememberScrollState())
+            ) {
+                choices.forEachIndexed { index, choice ->
+                    SettingsRow(
+                        icon = R.drawable.ic_outline_translate_24,
+                        title = choice.first,
+                        summary = choice.second,
+                        onClick = { onSelect(index) },
+                        trailing = {
+                            RadioButton(
+                                selected = index == selectedIndex,
+                                onClick = { onSelect(index) }
+                            )
+                        }
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(android.R.string.cancel))
+            }
+        },
+        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+        shape = MaterialTheme.shapes.extraLarge
+    )
 }

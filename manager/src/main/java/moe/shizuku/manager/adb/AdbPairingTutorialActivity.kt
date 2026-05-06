@@ -10,78 +10,146 @@ import android.os.Bundle
 import android.provider.Settings
 import android.util.Log
 import android.widget.Toast
+import androidx.activity.compose.setContent
 import androidx.annotation.RequiresApi
-import androidx.core.view.isGone
-import androidx.core.view.isVisible
+import androidx.compose.material3.Button
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.Text
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.res.stringResource
 import moe.shizuku.manager.AppConstants
-import moe.shizuku.manager.app.AppBarActivity
-import moe.shizuku.manager.databinding.AdbPairingTutorialActivityBinding
+import moe.shizuku.manager.R
+import moe.shizuku.manager.app.AppActivity
+import moe.shizuku.manager.ui.compose.ExpressiveCard
+import moe.shizuku.manager.ui.compose.ShizukuExpressiveTheme
+import moe.shizuku.manager.ui.compose.ShizukuLazyScaffold
+import moe.shizuku.manager.ui.compose.StepRow
 import rikka.compatibility.DeviceCompatibility
 
 @RequiresApi(Build.VERSION_CODES.R)
-class AdbPairingTutorialActivity : AppBarActivity() {
+class AdbPairingTutorialActivity : AppActivity() {
 
-    private lateinit var binding: AdbPairingTutorialActivityBinding
-
-    private var notificationEnabled: Boolean = false
+    private var notificationEnabled by mutableStateOf(false)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        val context = this
-
-        binding = AdbPairingTutorialActivityBinding.inflate(layoutInflater)
-        setContentView(binding.root)
-        supportActionBar?.setDisplayHomeAsUpEnabled(true)
 
         notificationEnabled = isNotificationEnabled()
-
         if (notificationEnabled) {
             startPairingService()
         }
 
-        binding.apply {
-            syncNotificationEnabled()
+        setContent {
+            ShizukuExpressiveTheme {
+                ShizukuLazyScaffold(
+                    title = stringResource(R.string.adb_pairing_tutorial_title),
+                    onNavigateUp = { finish() }
+                ) {
+                    if (notificationEnabled) {
+                        item {
+                            ExpressiveCard(
+                                icon = R.drawable.ic_outline_notifications_active_24,
+                                title = stringResource(R.string.notification_channel_adb_pairing),
+                                body = stringResource(R.string.adb_pairing_tutorial_content_notification)
+                            )
+                        }
+                        item {
+                            ExpressiveCard(
+                                icon = R.drawable.ic_help_outline_24dp,
+                                title = stringResource(R.string.home_local_network_title),
+                                body = stringResource(R.string.adb_pairing_tutorial_content_network) +
+                                        "\n\n" +
+                                        stringResource(R.string.adb_pairing_tutorial_content_network_limation_not_foreground)
+                            )
+                        }
+                    } else {
+                        item {
+                            ExpressiveCard(
+                                icon = R.drawable.ic_outline_info_24,
+                                title = stringResource(R.string.notification_settings),
+                                body = stringResource(R.string.adb_pairing_tutorial_content_notification_blocked),
+                                danger = true
+                            ) {
+                                Button(onClick = ::openNotificationSettings) {
+                                    Text(stringResource(R.string.notification_settings))
+                                }
+                            }
+                        }
+                    }
 
-            if (DeviceCompatibility.isMiui()) {
-                miui.isVisible = true
-            }
+                    if (DeviceCompatibility.isMiui()) {
+                        item {
+                            ExpressiveCard(
+                                icon = R.drawable.ic_warning_24,
+                                title = "MIUI",
+                                body = stringResource(R.string.adb_pairing_tutorial_content_miui) +
+                                        "\n\n" +
+                                        stringResource(R.string.adb_pairing_tutorial_content_miui_2),
+                                danger = true
+                            )
+                        }
+                    }
 
-            developerOptions.setOnClickListener {
-                val intent = Intent(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS)
-                intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
-                intent.putExtra(":settings:fragment_args_key", "toggle_adb_wireless")
-                try {
-                    context.startActivity(intent)
-                } catch (e: ActivityNotFoundException) {
-                }
-            }
-
-            notificationOptions.setOnClickListener {
-                val intent = Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
-                intent.putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
-                try {
-                    context.startActivity(intent)
-                } catch (e: ActivityNotFoundException) {
+                    if (notificationEnabled) {
+                        item {
+                            StepRow(
+                                number = 1,
+                                title = stringResource(R.string.adb_pairing_tutorial_content_steps),
+                                body = stringResource(R.string.adb_pairing_tutorial_content_left_is_clickable),
+                                action = {
+                                    Button(onClick = ::openDeveloperOptions) {
+                                        Text(stringResource(R.string.development_settings))
+                                    }
+                                }
+                            )
+                        }
+                        item {
+                            StepRow(
+                                number = 2,
+                                title = stringResource(R.string.adb_pairing_tutorial_content_enter_pairing_code),
+                                body = stringResource(R.string.adb_pairing_tutorial_content_notification)
+                            )
+                        }
+                        item {
+                            StepRow(
+                                number = 3,
+                                title = stringResource(R.string.adb_pairing_tutorial_content_finish),
+                                action = {
+                                    FilledTonalButton(onClick = { finish() }) {
+                                        Text(stringResource(android.R.string.ok))
+                                    }
+                                }
+                            )
+                        }
+                    }
                 }
             }
         }
     }
 
-    private fun syncNotificationEnabled() {
-        binding.apply {
-            step1.isVisible = notificationEnabled
-            step2.isVisible = notificationEnabled
-            step3.isVisible = notificationEnabled
-            network.isVisible = notificationEnabled
-            notification.isVisible = notificationEnabled
-            notificationDisabled.isGone = notificationEnabled
+    private fun openDeveloperOptions() {
+        val intent = Intent(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS)
+        intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+        intent.putExtra(":settings:fragment_args_key", "toggle_adb_wireless")
+        try {
+            startActivity(intent)
+        } catch (_: ActivityNotFoundException) {
+        }
+    }
+
+    private fun openNotificationSettings() {
+        val intent = Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+        intent.putExtra(Settings.EXTRA_APP_PACKAGE, packageName)
+        try {
+            startActivity(intent)
+        } catch (_: ActivityNotFoundException) {
         }
     }
 
     private fun isNotificationEnabled(): Boolean {
-        val context = this
-
-        val nm = context.getSystemService(NotificationManager::class.java)
+        val nm = getSystemService(NotificationManager::class.java)
         val channel = nm.getNotificationChannel(AdbPairingService.notificationChannel)
         return nm.areNotificationsEnabled() &&
                 (channel == null || channel.importance != NotificationManager.IMPORTANCE_NONE)
@@ -93,7 +161,6 @@ class AdbPairingTutorialActivity : AppBarActivity() {
         val newNotificationEnabled = isNotificationEnabled()
         if (newNotificationEnabled != notificationEnabled) {
             notificationEnabled = newNotificationEnabled
-            syncNotificationEnabled()
 
             if (newNotificationEnabled) {
                 startPairingService()

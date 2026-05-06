@@ -3,24 +3,28 @@ package moe.shizuku.manager.shell
 import android.net.Uri
 import android.os.Bundle
 import android.provider.DocumentsContract
-import android.view.View
+import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.material3.Button
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.Text
+import androidx.compose.ui.res.stringResource
 import moe.shizuku.manager.Helps
 import moe.shizuku.manager.R
-import moe.shizuku.manager.app.AppBarActivity
-import moe.shizuku.manager.databinding.TerminalTutorialActivityBinding
-import moe.shizuku.manager.ktx.toHtml
+import moe.shizuku.manager.app.AppActivity
+import moe.shizuku.manager.ui.compose.ExpressiveCard
+import moe.shizuku.manager.ui.compose.HtmlText
+import moe.shizuku.manager.ui.compose.ShizukuExpressiveTheme
+import moe.shizuku.manager.ui.compose.ShizukuLazyScaffold
+import moe.shizuku.manager.ui.compose.StepRow
 import moe.shizuku.manager.utils.CustomTabsHelper
-import rikka.html.text.HtmlCompat
-import rikka.insets.*
-import kotlin.math.roundToInt
 
-class ShellTutorialActivity : AppBarActivity() {
+class ShellTutorialActivity : AppActivity() {
 
     companion object {
 
-        private val SH_NAME = "rish"
-        private val DEX_NAME = "rish_shizuku.dex"
+        private const val SH_NAME = "rish"
+        private const val DEX_NAME = "rish_shizuku.dex"
     }
 
     private val openDocumentsTree =
@@ -61,49 +65,63 @@ class ShellTutorialActivity : AppBarActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        val binding = TerminalTutorialActivityBinding.inflate(layoutInflater)
-        setContentView(binding.root)
+        setContent {
+            val shName = SH_NAME
+            val dexName = DEX_NAME
 
-        binding.content.apply {
-            setInitialPadding(
-                initialPaddingLeft,
-                initialPaddingTop + (resources.displayMetrics.density * 8).roundToInt(),
-                initialPaddingRight,
-                initialPaddingBottom
-            )
-        }
-
-        supportActionBar?.setDisplayHomeAsUpEnabled(true)
-
-        binding.apply {
-            val shName = "<font face=\"monospace\">$SH_NAME</font>"
-            val dexName = "<font face=\"monospace\">$DEX_NAME</font>"
-
-            summary.text =
-                getString(R.string.rish_description, shName).toHtml(HtmlCompat.FROM_HTML_OPTION_TRIM_WHITESPACE)
-
-            text1.text = getString(R.string.terminal_tutorial_1, shName, dexName).toHtml()
-
-            text2.text = getString(R.string.terminal_tutorial_2, shName).toHtml()
-            summary2.text = getString(
-                R.string.terminal_tutorial_2_description,
-                "Termux",
-                "<font face=\"monospace\">PKG</font>",
-                "<font face=\"monospace\">com.termux</font>",
-                "<font face=\"monospace\">com.termux</font>",
-            ).toHtml()
-
-            text3.text = getString(
-                R.string.terminal_tutorial_3,
-                "<font face=\"monospace\">sh $SH_NAME</font>",
-            ).toHtml()
-            summary3.text = getString(
-                R.string.terminal_tutorial_3_description,
-                shName, "<font face=\"monospace\">PATH</font>"
-            ).toHtml()
-
-            button1.setOnClickListener { openDocumentsTree.launch(null) }
-            button2.setOnClickListener { v: View -> CustomTabsHelper.launchUrlOrCopy(v.context, Helps.RISH.get()) }
+            ShizukuExpressiveTheme {
+                ShizukuLazyScaffold(
+                    title = stringResource(R.string.home_terminal_title),
+                    onNavigateUp = { finish() }
+                ) {
+                    item {
+                        ExpressiveCard(
+                            icon = R.drawable.ic_help_outline_24dp,
+                            title = stringResource(R.string.home_terminal_title),
+                            body = HtmlText(R.string.rish_description, shName),
+                            onClick = { CustomTabsHelper.launchUrlOrCopy(this@ShellTutorialActivity, Helps.RISH.get()) }
+                        ) {
+                            FilledTonalButton(
+                                onClick = { CustomTabsHelper.launchUrlOrCopy(this@ShellTutorialActivity, Helps.RISH.get()) }
+                            ) {
+                                Text(stringResource(R.string.home_adb_button_view_help))
+                            }
+                        }
+                    }
+                    item {
+                        StepRow(
+                            number = 1,
+                            title = HtmlText(R.string.terminal_tutorial_1, shName, dexName),
+                            body = stringResource(R.string.terminal_tutorial_1_description),
+                            action = {
+                                Button(onClick = { openDocumentsTree.launch(null) }) {
+                                    Text(stringResource(R.string.terminal_export_files))
+                                }
+                            }
+                        )
+                    }
+                    item {
+                        StepRow(
+                            number = 2,
+                            title = HtmlText(R.string.terminal_tutorial_2, shName),
+                            body = HtmlText(
+                                R.string.terminal_tutorial_2_description,
+                                "Termux",
+                                "PKG",
+                                "com.termux",
+                                "com.termux"
+                            )
+                        )
+                    }
+                    item {
+                        StepRow(
+                            number = 3,
+                            title = HtmlText(R.string.terminal_tutorial_3, "sh $shName"),
+                            body = HtmlText(R.string.terminal_tutorial_3_description, shName, "PATH")
+                        )
+                    }
+                }
+            }
         }
     }
 }

@@ -3,13 +3,17 @@ package moe.shizuku.manager.starter
 import android.content.Context
 import android.os.Bundle
 import android.util.Log
+import androidx.activity.compose.setContent
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.livedata.observeAsState
+import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
+import androidx.lifecycle.viewModelScope
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.topjohnwu.superuser.CallbackList
 import com.topjohnwu.superuser.Shell
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.launch
 import moe.shizuku.manager.AppConstants.EXTRA
 import moe.shizuku.manager.R
@@ -18,8 +22,12 @@ import moe.shizuku.manager.adb.AdbClient
 import moe.shizuku.manager.adb.AdbKey
 import moe.shizuku.manager.adb.AdbKeyException
 import moe.shizuku.manager.adb.PreferenceAdbKeyStore
-import moe.shizuku.manager.app.AppBarActivity
-import moe.shizuku.manager.databinding.StarterActivityBinding
+import moe.shizuku.manager.app.AppActivity
+import moe.shizuku.manager.ui.compose.ExpressiveCard
+import moe.shizuku.manager.ui.compose.HtmlText
+import moe.shizuku.manager.ui.compose.MonospaceLog
+import moe.shizuku.manager.ui.compose.ShizukuExpressiveTheme
+import moe.shizuku.manager.ui.compose.ShizukuLazyScaffold
 import rikka.lifecycle.Resource
 import rikka.lifecycle.Status
 import rikka.lifecycle.viewModels
@@ -29,7 +37,9 @@ import javax.net.ssl.SSLProtocolException
 
 private class NotRootedException : Exception()
 
-class StarterActivity : AppBarActivity() {
+class StarterActivity : AppActivity() {
+
+    private var waitingForService = false
 
     private val viewModel by viewModels {
         ViewModel(
@@ -43,26 +53,24 @@ class StarterActivity : AppBarActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        supportActionBar?.setDisplayHomeAsUpEnabled(true)
-        supportActionBar?.setHomeAsUpIndicator(R.drawable.ic_close_24)
-
-        val binding = StarterActivityBinding.inflate(layoutInflater)
-        setContentView(binding.root)
+        val startedWithRoot = intent.getBooleanExtra(EXTRA_IS_ROOT, true)
 
         viewModel.output.observe(this) {
-            val output = it.data!!.trim()
-            if (output.endsWith("info: shizuku_starter exit with 0")) {
+            val output = it.data.orEmpty().trim()
+            if (!waitingForService && output.endsWith("info: shizuku_starter exit with 0")) {
+                waitingForService = true
                 viewModel.appendOutput("")
                 viewModel.appendOutput("Waiting for service...")
 
-                Shizuku.addBinderReceivedListener(object : Shizuku.OnBinderReceivedListener {
+                Shizuku.addBinderReceivedListenerSticky(object : Shizuku.OnBinderReceivedListener {
                     override fun onBinderReceived() {
                         Shizuku.removeBinderReceivedListener(this)
-                        viewModel.appendOutput("Service started, this window will be automatically closed in 3 seconds")
-
-                        window?.decorView?.postDelayed({
-                            if (!isFinishing) finish()
-                        }, 3000)
+                        runOnUiThread {
+                            viewModel.appendOutput("Service started, this window will be automatically closed in 3 seconds")
+                            window?.decorView?.postDelayed({
+                                if (!isFinishing) finish()
+                            }, 3000)
+                        }
                     }
                 })
             } else if (it.status == Status.ERROR) {
@@ -89,7 +97,42 @@ class StarterActivity : AppBarActivity() {
                         .show()
                 }
             }
-            binding.text1.text = output
+        }
+
+        setContent {
+            val outputResource by viewModel.output.observeAsState()
+            val output = outputResource?.data.orEmpty()
+            val failed = outputResource?.status == Status.ERROR
+
+            ShizukuExpressiveTheme {
+                ShizukuLazyScaffold(
+                    title = stringResource(R.string.starter),
+                    onNavigateUp = { finish() },
+                    navigationIcon = R.drawable.ic_close_24
+                ) {
+                    item {
+                        ExpressiveCard(
+                            icon = if (startedWithRoot) R.drawable.ic_root_24dp else R.drawable.ic_adb_24dp,
+                            title = if (startedWithRoot) {
+                                HtmlText(R.string.home_root_title)
+                            } else {
+                                HtmlText(R.string.home_wireless_adb_title)
+                            },
+                            body = if (failed) {
+                                stringResource(R.string.notification_service_start_failed)
+                            } else {
+                                stringResource(R.string.notification_service_starting)
+                            },
+                            danger = failed
+                        )
+                    }
+                    item {
+                        MonospaceLog(
+                            text = output.ifBlank { stringResource(R.string.starting_root_shell) }
+                        )
+                    }
+                }
+            }
         }
     }
 
@@ -104,9 +147,10 @@ class StarterActivity : AppBarActivity() {
 private class ViewModel(context: Context, root: Boolean, host: String?, port: Int) : androidx.lifecycle.ViewModel() {
 
     private val sb = StringBuilder()
-    private val _output = MutableLiveData<Resource<StringBuilder>>()
+    private val outputLock = Any()
+    private val _output = MutableLiveData<Resource<String>>()
 
-    val output = _output as LiveData<Resource<StringBuilder>>
+    val output = _output as LiveData<Resource<String>>
 
     init {
         try {
@@ -121,29 +165,49 @@ private class ViewModel(context: Context, root: Boolean, host: String?, port: In
     }
 
     fun appendOutput(line: String) {
-        sb.appendLine(line)
+        synchronized(outputLock) {
+            sb.appendLine(line)
+        }
+        postResult()
+    }
+
+    private fun appendRaw(value: String?) {
+        synchronized(outputLock) {
+            sb.append(value.orEmpty()).append('\n')
+        }
+        postResult()
+    }
+
+    private fun appendLine(value: String) {
+        synchronized(outputLock) {
+            sb.append(value).append('\n')
+        }
         postResult()
     }
 
     private fun postResult(throwable: Throwable? = null) {
-        if (throwable == null)
-            _output.postValue(Resource.success(sb))
-        else
-            _output.postValue(Resource.error(throwable, sb))
+        val snapshot = synchronized(outputLock) {
+            sb.toString()
+        }
+        if (throwable == null) {
+            _output.postValue(Resource.success(snapshot))
+        } else {
+            _output.postValue(Resource.error(throwable, snapshot))
+        }
     }
 
     private fun startRoot() {
-        sb.append("Starting with root...").append('\n').append('\n')
+        synchronized(outputLock) {
+            sb.append("Starting with root...").append('\n').append('\n')
+        }
         postResult()
 
-        GlobalScope.launch(Dispatchers.IO) {
+        viewModelScope.launch(Dispatchers.IO) {
             if (!Shell.getShell().isRoot) {
                 Shell.getCachedShell()?.close()
-                sb.append('\n').append("Can't open root shell, try again...").append('\n')
-
-                postResult()
+                appendLine("\nCan't open root shell, try again...")
                 if (!Shell.getShell().isRoot) {
-                    sb.append('\n').append("Still not :(").append('\n')
+                    appendLine("\nStill not :(")
                     postResult(NotRootedException())
                     return@launch
                 }
@@ -151,28 +215,28 @@ private class ViewModel(context: Context, root: Boolean, host: String?, port: In
 
             Shell.cmd(Starter.internalCommand).to(object : CallbackList<String?>() {
                 override fun onAddElement(s: String?) {
-                    sb.append(s).append('\n')
-                    postResult()
+                    appendRaw(s)
                 }
             }).submit {
                 if (it.code != 0) {
-                    sb.append('\n').append("Send this to developer may help solve the problem.")
-                    postResult()
+                    appendLine("\nSend this to developer may help solve the problem.")
                 }
             }
         }
     }
 
     private fun startAdb(host: String, port: Int) {
-        sb.append("Starting with wireless adb in port $port...").append('\n').append('\n')
+        synchronized(outputLock) {
+            sb.append("Starting with wireless adb in port $port...").append('\n').append('\n')
+        }
         postResult()
 
-        GlobalScope.launch(Dispatchers.IO) {
+        viewModelScope.launch(Dispatchers.IO) {
             val key = try {
                 AdbKey(PreferenceAdbKeyStore(ShizukuSettings.getPreferences()), "shizuku")
             } catch (e: Throwable) {
                 e.printStackTrace()
-                sb.append('\n').append(Log.getStackTraceString(e))
+                appendLine("\n${Log.getStackTraceString(e)}")
 
                 postResult(AdbKeyException(e))
                 return@launch
@@ -181,14 +245,16 @@ private class ViewModel(context: Context, root: Boolean, host: String?, port: In
             AdbClient(host, port, key).runCatching {
                 connect()
                 shellCommand(Starter.internalCommand) {
-                    sb.append(String(it))
+                    synchronized(outputLock) {
+                        sb.append(String(it))
+                    }
                     postResult()
                 }
                 close()
             }.onFailure {
                 it.printStackTrace()
 
-                sb.append('\n').append(Log.getStackTraceString(it))
+                appendLine("\n${Log.getStackTraceString(it)}")
                 postResult(it)
             }
         }

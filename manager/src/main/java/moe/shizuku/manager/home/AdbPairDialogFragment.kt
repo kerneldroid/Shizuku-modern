@@ -1,3 +1,5 @@
+@file:OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+
 package moe.shizuku.manager.home
 
 import android.annotation.SuppressLint
@@ -9,41 +11,91 @@ import android.os.Build.VERSION_CODES
 import android.os.Bundle
 import android.provider.Settings
 import android.view.Gravity
-import android.view.LayoutInflater
 import android.widget.Toast
 import androidx.annotation.RequiresApi
 import androidx.appcompat.app.AlertDialog
-import androidx.core.view.isVisible
-import androidx.core.widget.doAfterTextChanged
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.LoadingIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.ComposeView
+import androidx.compose.ui.platform.ViewCompositionStrategy
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.unit.dp
 import androidx.fragment.app.DialogFragment
 import androidx.fragment.app.FragmentManager
 import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
+import androidx.lifecycle.viewModelScope
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.launch
 import moe.shizuku.manager.R
 import moe.shizuku.manager.ShizukuSettings
-import moe.shizuku.manager.adb.*
-import moe.shizuku.manager.databinding.AdbPairDialogBinding
+import moe.shizuku.manager.adb.AdbInvalidPairingCodeException
+import moe.shizuku.manager.adb.AdbKey
+import moe.shizuku.manager.adb.AdbKeyException
+import moe.shizuku.manager.adb.AdbMdns
+import moe.shizuku.manager.adb.AdbPairingClient
+import moe.shizuku.manager.adb.PreferenceAdbKeyStore
+import moe.shizuku.manager.ui.compose.ShizukuExpressiveTheme
 import rikka.lifecycle.viewModels
 import java.net.ConnectException
 
 @RequiresApi(VERSION_CODES.R)
 class AdbPairDialogFragment : DialogFragment() {
 
-    private lateinit var binding: AdbPairDialogBinding
-
     private val viewModel by viewModels { ViewModel(requireContext()) }
+
+    private var inPairingWindow by mutableStateOf(false)
+    private var discoveredPort by mutableIntStateOf(-1)
+    private var portText by mutableStateOf("")
+    private var pairingCode by mutableStateOf("")
+    private var portError by mutableStateOf<String?>(null)
+    private var pairingCodeError by mutableStateOf<String?>(null)
 
     override fun onCreateDialog(savedInstanceState: Bundle?): Dialog {
         val context = requireContext()
-        binding = AdbPairDialogBinding.inflate(LayoutInflater.from(context))
+        val content = ComposeView(context).apply {
+            setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnDetachedFromWindow)
+            setContent {
+                ShizukuExpressiveTheme {
+                    PairDialogContent(
+                        inPairingWindow = inPairingWindow,
+                        discoveredPort = discoveredPort,
+                        portText = portText,
+                        onPortTextChange = {
+                            portText = it.filter(Char::isDigit).take(5)
+                            portError = null
+                        },
+                        portError = portError,
+                        pairingCode = pairingCode,
+                        onPairingCodeChange = {
+                            pairingCode = it.filter(Char::isDigit).take(6)
+                            pairingCodeError = null
+                        },
+                        pairingCodeError = pairingCodeError
+                    )
+                }
+            }
+        }
 
         val builder = MaterialAlertDialogBuilder(context).apply {
             setTitle(R.string.dialog_adb_pairing_title)
-            setView(binding.root)
+            setView(content)
             setNegativeButton(android.R.string.cancel, null)
             setPositiveButton(android.R.string.ok, null)
             setNeutralButton(R.string.development_settings, null)
@@ -55,13 +107,7 @@ class AdbPairDialogFragment : DialogFragment() {
     }
 
     private fun onDialogShow(dialog: AlertDialog) {
-        binding.pairingCode.editText!!.doAfterTextChanged {
-            binding.pairingCode.error = null
-        }
-
-        binding.pairingCode.error = null
-
-        dialog.getButton(AlertDialog.BUTTON_POSITIVE).isVisible = false
+        dialog.getButton(AlertDialog.BUTTON_POSITIVE).visibility = android.view.View.GONE
 
         dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener {
             val intent = Intent(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS)
@@ -69,43 +115,33 @@ class AdbPairDialogFragment : DialogFragment() {
             intent.putExtra(":settings:fragment_args_key", "toggle_adb_wireless")
             try {
                 it.context.startActivity(intent)
-            } catch (e: ActivityNotFoundException) {
+            } catch (_: ActivityNotFoundException) {
             }
         }
 
         dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
             val context = it.context
-            val port = try {
-                binding.port.editText!!.text.toString().toInt()
-            } catch (e: Exception) {
-                -1
-            }
+            val port = portText.toIntOrNull() ?: -1
             if (port > 65535 || port < 1) {
-                binding.port.isVisible = true
-                binding.port.error = context.getString(R.string.dialog_adb_invalid_port)
+                portError = context.getString(R.string.dialog_adb_invalid_port)
                 return@setOnClickListener
             }
 
-            val password = binding.pairingCode.editText!!.text.toString()
-
-            viewModel.run(port, password)
+            viewModel.run(port, pairingCode)
         }
 
         viewModel.port.observe(this) {
-            if (it == -1) {
+            discoveredPort = it
+            if (it > 65535 || it < 1) {
                 dialog.setTitle(R.string.dialog_adb_pairing_discovery)
-                binding.text1.isVisible = true
-                binding.pairingCode.isVisible = false
-                binding.port.editText!!.setText(it.toString())
-                dialog.getButton(AlertDialog.BUTTON_POSITIVE).isVisible = false
-                dialog.getButton(AlertDialog.BUTTON_NEUTRAL).isVisible = true
+                dialog.getButton(AlertDialog.BUTTON_POSITIVE).visibility = android.view.View.GONE
+                dialog.getButton(AlertDialog.BUTTON_NEUTRAL).visibility = android.view.View.VISIBLE
             } else {
+                portText = it.toString()
+                portError = null
                 dialog.setTitle(R.string.dialog_adb_pairing_title)
-                binding.text1.isVisible = false
-                binding.pairingCode.isVisible = true
-                binding.port.editText!!.setText(it.toString())
-                dialog.getButton(AlertDialog.BUTTON_POSITIVE).isVisible = true
-                dialog.getButton(AlertDialog.BUTTON_NEUTRAL).isVisible = false
+                dialog.getButton(AlertDialog.BUTTON_POSITIVE).visibility = android.view.View.VISIBLE
+                dialog.getButton(AlertDialog.BUTTON_NEUTRAL).visibility = android.view.View.GONE
             }
         }
     }
@@ -114,13 +150,10 @@ class AdbPairDialogFragment : DialogFragment() {
         super.onActivityCreated(savedInstanceState)
 
         val context = requireContext()
-        val inMultiScreenOrDisplay = (requireActivity().isInMultiWindowMode
+        inPairingWindow = (requireActivity().isInMultiWindowMode
                 || (requireActivity().window?.decorView?.display?.displayId ?: -1) > 0)
 
-        binding.text1.isVisible = inMultiScreenOrDisplay
-        binding.text2.isVisible = !inMultiScreenOrDisplay
-
-        if (inMultiScreenOrDisplay) {
+        if (inPairingWindow) {
             dialog?.setTitle(R.string.dialog_adb_pairing_discovery)
         } else {
             dialog?.setTitle(R.string.dialog_adb_pairing_title)
@@ -132,10 +165,10 @@ class AdbPairDialogFragment : DialogFragment() {
             } else {
                 when (it) {
                     is ConnectException -> {
-                        binding.port.error = context.getString(R.string.cannot_connect_port)
+                        portError = context.getString(R.string.cannot_connect_port)
                     }
                     is AdbInvalidPairingCodeException -> {
-                        binding.pairingCode.error = context.getString(R.string.paring_code_is_wrong)
+                        pairingCodeError = context.getString(R.string.paring_code_is_wrong)
                     }
                     is AdbKeyException -> {
                         Toast.makeText(context, context.getString(R.string.adb_error_key_store), Toast.LENGTH_LONG)
@@ -150,9 +183,73 @@ class AdbPairDialogFragment : DialogFragment() {
         if (fragmentManager.isStateSaved) return
         show(fragmentManager, javaClass.simpleName)
     }
+}
 
-    override fun getDialog(): AlertDialog? {
-        return super.getDialog() as AlertDialog?
+@Composable
+private fun PairDialogContent(
+    inPairingWindow: Boolean,
+    discoveredPort: Int,
+    portText: String,
+    onPortTextChange: (String) -> Unit,
+    portError: String?,
+    pairingCode: String,
+    onPairingCodeChange: (String) -> Unit,
+    pairingCodeError: String?
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 24.dp, vertical = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        if (!inPairingWindow) {
+            Text(
+                text = stringResource(R.string.adb_pairing_requires_multi_window),
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.primary
+            )
+            Text(
+                text = stringResource(R.string.adb_pairing_requires_multi_window_reason),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            return@Column
+        }
+
+        if (discoveredPort !in 1..65535) {
+            Text(
+                text = stringResource(R.string.dialog_adb_pairing_message),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            LoadingIndicator()
+            return@Column
+        }
+
+        OutlinedTextField(
+            value = pairingCode,
+            onValueChange = onPairingCodeChange,
+            modifier = Modifier.fillMaxWidth(),
+            label = { Text(stringResource(R.string.dialog_adb_pairing_paring_code)) },
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+            singleLine = true,
+            isError = pairingCodeError != null,
+            supportingText = pairingCodeError?.let { error ->
+                { Text(error) }
+            }
+        )
+        OutlinedTextField(
+            value = portText,
+            onValueChange = onPortTextChange,
+            modifier = Modifier.fillMaxWidth(),
+            label = { Text(stringResource(R.string.dialog_adb_port)) },
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+            singleLine = true,
+            isError = portError != null,
+            supportingText = portError?.let { error ->
+                { Text(error) }
+            }
+        )
     }
 }
 
@@ -174,7 +271,7 @@ private class ViewModel(context: Context) : androidx.lifecycle.ViewModel() {
     }
 
     fun run(port: Int, password: String) {
-        GlobalScope.launch(Dispatchers.IO) {
+        viewModelScope.launch(Dispatchers.IO) {
             val host = "127.0.0.1"
 
             val key = try {
