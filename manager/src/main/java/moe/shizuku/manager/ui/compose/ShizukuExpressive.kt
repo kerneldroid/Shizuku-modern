@@ -32,6 +32,28 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.automirrored.rounded.HelpOutline
+import androidx.compose.material.icons.automirrored.rounded.OpenInNew
+import androidx.compose.material.icons.rounded.Apps
+import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.Code
+import androidx.compose.material.icons.rounded.ContentCopy
+import androidx.compose.material.icons.rounded.DarkMode
+import androidx.compose.material.icons.rounded.HelpOutline
+import androidx.compose.material.icons.rounded.Info
+import androidx.compose.material.icons.rounded.Link
+import androidx.compose.material.icons.rounded.MoreVert
+import androidx.compose.material.icons.rounded.NotificationsActive
+import androidx.compose.material.icons.rounded.OpenInNew
+import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material.icons.rounded.Terminal
+import androidx.compose.material.icons.rounded.Translate
+import androidx.compose.material.icons.rounded.Warning
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
@@ -39,6 +61,7 @@ import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialExpressiveTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.MotionScheme
@@ -46,6 +69,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
@@ -59,6 +83,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -139,10 +164,7 @@ fun ShizukuScaffold(
                 navigationIcon = {
                     if (onNavigateUp != null) {
                         IconButton(onClick = onNavigateUp) {
-                            Icon(
-                                painter = painterResource(navigationIcon),
-                                contentDescription = null
-                            )
+                            ShizukuIcon(navigationIcon)
                         }
                     }
                 },
@@ -227,8 +249,8 @@ fun ExpressiveCard(
                 color = iconContainer
             ) {
                 Box(contentAlignment = Alignment.Center) {
-                    Icon(
-                        painter = painterResource(icon),
+                    ShizukuIcon(
+                        icon = icon,
                         contentDescription = null,
                         tint = onIconContainer,
                         modifier = Modifier.size(24.dp)
@@ -349,8 +371,8 @@ fun SettingsRow(
         horizontalArrangement = Arrangement.spacedBy(16.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Icon(
-            painter = painterResource(icon),
+        ShizukuIcon(
+            icon = icon,
             contentDescription = null,
             tint = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.size(24.dp)
@@ -395,7 +417,7 @@ fun SwitchSettingsRow(
         enabled = enabled,
         onClick = { if (enabled) onCheckedChange(!checked) },
         trailing = {
-            Switch(
+            ExpressiveSwitch(
                 checked = checked,
                 enabled = enabled,
                 onCheckedChange = onCheckedChange
@@ -487,11 +509,89 @@ fun htmlToPlainText(value: String): String {
 
 @Composable
 private fun ButtonIcon(@DrawableRes icon: Int) {
-    Icon(
-        painter = painterResource(icon),
+    ShizukuIcon(
+        icon = icon,
         contentDescription = null,
         modifier = Modifier
             .padding(end = 8.dp)
             .size(18.dp)
     )
+}
+
+@Composable
+fun ExpressiveSwitch(
+    checked: Boolean,
+    onCheckedChange: ((Boolean) -> Unit)?,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true
+) {
+    Switch(
+        checked = checked,
+        onCheckedChange = onCheckedChange,
+        modifier = modifier,
+        enabled = enabled,
+        thumbContent = if (checked) {
+            {
+                Icon(
+                    imageVector = Icons.Rounded.Check,
+                    contentDescription = null,
+                    modifier = Modifier.size(SwitchDefaults.IconSize)
+                )
+            }
+        } else {
+            null
+        }
+    )
+}
+
+@Composable
+fun ShizukuIcon(
+    @DrawableRes icon: Int,
+    contentDescription: String? = null,
+    modifier: Modifier = Modifier,
+    tint: Color = LocalContentColor.current
+) {
+    val imageVector = roundedIconFor(icon)
+    if (imageVector != null) {
+        Icon(
+            imageVector = imageVector,
+            contentDescription = contentDescription,
+            modifier = modifier,
+            tint = tint
+        )
+    } else {
+        Icon(
+            painter = painterResource(icon),
+            contentDescription = contentDescription,
+            modifier = modifier,
+            tint = tint
+        )
+    }
+}
+
+private fun roundedIconFor(@DrawableRes icon: Int): ImageVector? {
+    return when (icon) {
+        R.drawable.ic_arrow_back_24 -> Icons.AutoMirrored.Rounded.ArrowBack
+        R.drawable.ic_action_settings_24dp,
+        R.drawable.ic_settings_outline_24dp -> Icons.Rounded.Settings
+        R.drawable.ic_server_restart -> Icons.Rounded.Refresh
+        R.drawable.ic_more_vert_24 -> Icons.Rounded.MoreVert
+        R.drawable.ic_close_24 -> Icons.Rounded.Close
+        R.drawable.ic_outline_info_24,
+        R.drawable.ic_action_about_24dp -> Icons.Rounded.Info
+        R.drawable.ic_system_icon -> Icons.Rounded.Apps
+        R.drawable.ic_warning_24 -> Icons.Rounded.Warning
+        R.drawable.ic_help_outline_24dp -> Icons.AutoMirrored.Rounded.HelpOutline
+        R.drawable.ic_outline_translate_24 -> Icons.Rounded.Translate
+        R.drawable.ic_baseline_link_24 -> Icons.Rounded.Link
+        R.drawable.ic_outline_dark_mode_24 -> Icons.Rounded.DarkMode
+        R.drawable.ic_outline_notifications_active_24 -> Icons.Rounded.NotificationsActive
+        R.drawable.ic_outline_open_in_new_24 -> Icons.AutoMirrored.Rounded.OpenInNew
+        R.drawable.ic_outline_play_arrow_24,
+        R.drawable.ic_server_start_24dp -> Icons.Rounded.PlayArrow
+        R.drawable.ic_content_copy_24 -> Icons.Rounded.ContentCopy
+        R.drawable.ic_terminal_24 -> Icons.Rounded.Terminal
+        R.drawable.ic_code_24dp -> Icons.Rounded.Code
+        else -> null
+    }
 }

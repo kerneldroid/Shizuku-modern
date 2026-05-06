@@ -491,17 +491,22 @@ public class ShizukuService extends Service<ShizukuUserServiceManager, ShizukuCl
     }
 
     void sendBinderToManager() {
-        sendBinderToManger(this);
+        sendBinderToManager(this);
     }
 
-    private static void sendBinderToManger(Binder binder) {
+    private static void sendBinderToManager(Binder binder) {
         for (int userId : UserManagerApis.getUserIdsNoThrow()) {
-            sendBinderToManger(binder, userId);
+            sendBinderToManager(binder, userId);
         }
     }
 
-    static void sendBinderToManger(Binder binder, int userId) {
+    static void sendBinderToManager(Binder binder, int userId) {
         sendBinderToUserApp(binder, MANAGER_APPLICATION_ID, userId);
+    }
+
+    @Deprecated
+    static void sendBinderToManger(Binder binder, int userId) {
+        sendBinderToManager(binder, userId);
     }
 
     static void sendBinderToUserApp(Binder binder, String packageName, int userId) {

@@ -45,7 +45,6 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.FilledTonalButton
-import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialTheme
@@ -67,7 +66,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -87,6 +85,7 @@ import moe.shizuku.manager.settings.SettingsActivity
 import moe.shizuku.manager.shell.ShellTutorialActivity
 import moe.shizuku.manager.starter.Starter
 import moe.shizuku.manager.starter.StarterActivity
+import moe.shizuku.manager.ui.compose.ShizukuIcon
 import moe.shizuku.manager.ui.compose.ShizukuExpressiveTheme
 import moe.shizuku.manager.utils.CustomTabsHelper
 import moe.shizuku.manager.utils.EnvironmentUtils
@@ -424,21 +423,21 @@ private fun HomeScreen(
                 },
                 actions = {
                     IconButton(onClick = onSettings) {
-                        Icon(
-                            painter = painterResource(R.drawable.ic_action_settings_24dp),
+                        ShizukuIcon(
+                            icon = R.drawable.ic_action_settings_24dp,
                             contentDescription = stringResource(R.string.settings_title)
                         )
                     }
                     IconButton(onClick = onRefresh) {
-                        Icon(
-                            painter = painterResource(R.drawable.ic_server_restart),
+                        ShizukuIcon(
+                            icon = R.drawable.ic_server_restart,
                             contentDescription = stringResource(R.string.home_refresh)
                         )
                     }
                     Box {
                         IconButton(onClick = { moreOpen = true }) {
-                            Icon(
-                                painter = painterResource(R.drawable.ic_more_vert_24),
+                            ShizukuIcon(
+                                icon = R.drawable.ic_more_vert_24,
                                 contentDescription = null
                             )
                         }
@@ -449,7 +448,7 @@ private fun HomeScreen(
                             DropdownMenuItem(
                                 text = { Text(stringResource(R.string.action_stop)) },
                                 leadingIcon = {
-                                    Icon(painterResource(R.drawable.ic_close_24), contentDescription = null)
+                                    ShizukuIcon(R.drawable.ic_close_24, contentDescription = null)
                                 },
                                 onClick = {
                                     moreOpen = false
@@ -459,7 +458,7 @@ private fun HomeScreen(
                             DropdownMenuItem(
                                 text = { Text(stringResource(R.string.action_about)) },
                                 leadingIcon = {
-                                    Icon(painterResource(R.drawable.ic_outline_info_24), contentDescription = null)
+                                    ShizukuIcon(R.drawable.ic_outline_info_24, contentDescription = null)
                                 },
                                 onClick = {
                                     moreOpen = false
@@ -864,8 +863,8 @@ private fun HomeCard(
                 color = MaterialTheme.colorScheme.primaryContainer
             ) {
                 Box(contentAlignment = Alignment.Center) {
-                    Icon(
-                        painter = painterResource(icon),
+                    ShizukuIcon(
+                        icon = icon,
                         contentDescription = null,
                         tint = MaterialTheme.colorScheme.onPrimaryContainer,
                         modifier = Modifier.size(24.dp)
@@ -938,8 +937,8 @@ private fun HomeButtons(buttons: List<HomeButtonSpec>) {
 
 @Composable
 private fun ButtonIcon(@DrawableRes icon: Int) {
-    Icon(
-        painter = painterResource(icon),
+    ShizukuIcon(
+        icon = icon,
         contentDescription = null,
         modifier = Modifier
             .padding(end = 8.dp)

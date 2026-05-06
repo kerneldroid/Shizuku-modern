@@ -1,5 +1,13 @@
 # Shizuku
 
+## Fork status
+
+This repository is an independent fork of Shizuku, based on the upstream project by RikkaApps.
+The fork modernizes the Android manager UI with Jetpack Compose and Material 3 Expressive,
+tracks newer Android SDK targets, and carries local server/manager fixes.
+
+Upstream project: <https://github.com/RikkaApps/Shizuku>
+
 ## Background
 
 When developing apps that requires root, the most common method is to run some commands in the su shell. For example, there is an app that uses the `pm enable/disable` command to enable/disable components.
