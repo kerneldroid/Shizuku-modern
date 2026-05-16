@@ -33,7 +33,7 @@ When running the original Shizuku on Android 17, the server process attempts to 
 java.lang.NoSuchMethodError: No virtual method grantRuntimePermission(Ljava/lang/String;Ljava/lang/String;I)V in class Landroid/permission/IPermissionManager;
 ```
 
-## Modernized Fork (v13.6.0.r33)
+## Modernized Fork (v13.6.0.r33+)
 
 Our fork implements a robust, dynamic reflection fallback mechanism (`Android17Compat.java` and `ShizukuSystemApis.kt`) designed specifically to intercept these API 37 changes.
 
@@ -41,6 +41,7 @@ Our fork implements a robust, dynamic reflection fallback mechanism (`Android17C
 - When the `NoSuchMethodError` is caught, the system gracefully degrades to a manual `ServiceManager.getService("permissionmgr")` call.
 - It dynamically scans the available methods on the Binder interface at runtime.
 - If it detects the new Android 17 signature requiring a `deviceId`, it automatically injects `Context.DEVICE_ID_DEFAULT` (0) alongside the `userId`.
+- **Optimization (May 2026):** We introduced a caching layer within `Android17Compat` that memoizes the resolved reflective methods (`sGetInstalledPackagesMethod`, `sGrantRuntimePermissionMethod`, etc.) and system service objects. This drastically reduces the overhead of subsequent permission checks and package queries, ensuring the fallback performs nearly as fast as the native API.
 - Permission grants and package queries succeed transparently, avoiding any server-side panics.
 
 ### Logcat Evidence
