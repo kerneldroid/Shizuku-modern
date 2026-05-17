@@ -5,7 +5,7 @@ This document details the Wear OS compatibility enhancements introduced in the S
 ## Supported Versions
 * Wear OS 5.1 (Android 15)
 * Wear OS 6 (Android 16)
-* Wear OS 7 (Android 17 / API 36/37)
+* Wear OS 6.1 (Android 16 / API 36.1)
 
 ## Changes Implemented
 
@@ -21,6 +21,6 @@ The entire user interface for Wear OS has been rewritten using the official `and
 * **Optimized Layouts:** Removed the previous 0.8x scaling hack. The UI now natively adapts to small, high-density circular screens with proper paddings and touch targets.
 
 ## Verification
-* The Shizuku server successfully binds and operates on Wear OS 7 (API 36+) emulators and real devices.
+* The Shizuku server successfully binds and operates on Wear OS 6.1 (API 36.1) emulators and real devices.
 * Application UI provides a first-class native experience on 1.4-inch and 1.5-inch round displays.
 * All core functionalities, including ADB bindings and root execution, are functional.
