@@ -12,9 +12,9 @@ import android.text.TextUtils
 import androidx.annotation.RequiresApi
 import rikka.hidden.compat.ActivityManagerApis
 import rikka.hidden.compat.PackageManagerApis
-import rikka.hidden.compat.PermissionManagerApis
 import rikka.hidden.compat.adapter.ProcessObserverAdapter
 import rikka.hidden.compat.adapter.UidObserverAdapter
+import rikka.shizuku.server.util.Android17Compat
 import rikka.shizuku.server.util.Logger
 import rikka.shizuku.server.util.UserHandleCompat
 
@@ -143,7 +143,7 @@ object BinderSender {
         val userId = UserHandleCompat.getUserId(uid)
         var sentManager = false
         for (packageName in packages) {
-            val packageInfo = PackageManagerApis.getPackageInfoNoThrow(
+            val packageInfo = Android17Compat.getPackageInfo(
                 packageName,
                 PackageManager.GET_PERMISSIONS.toLong(),
                 userId
@@ -152,7 +152,7 @@ object BinderSender {
 
             if (requestedPermissions.contains(PERMISSION_MANAGER)) {
                 val granted = if (pid == -1) {
-                    PermissionManagerApis.checkPermission(PERMISSION_MANAGER, uid) == PackageManager.PERMISSION_GRANTED
+                    Android17Compat.checkPermission(PERMISSION_MANAGER, uid) == PackageManager.PERMISSION_GRANTED
                 } else {
                     ActivityManagerApis.checkPermission(PERMISSION_MANAGER, pid, uid) == PackageManager.PERMISSION_GRANTED
                 }

@@ -248,19 +248,6 @@ Trusted modules:
 - can use `download()` even when global WebUI download is blocked;
 - can overwrite WebUI entry files through `download()`.
 
-### ReCommand
-
-When ReCommand is enabled, WebUI shell execution and Action execution show a confirmation dialog before the command runs. The dialog shows the command, supports icon-only expand/collapse and copy controls, and has one close action plus one execute action. Expand/collapse is shown only when the command is longer than the preview.
-
-The optional AI checker is hidden by default. It is toggled from Settings by tapping the translation contributors row five times quickly. After unlock:
-
-- the AI settings row appears in module settings;
-- the Gemini star appears in ReCommand dialogs;
-- the API key is stored encrypted with Android Keystore;
-- supported model ids are `gemini-3.1-pro-preview`, `gemini-3-flash-preview`, and `gemini-3.1-flash-lite-preview`.
-
-Repeating the same five-tap gesture hides the AI settings row and Gemini star again.
-
 ### WebUI Internet File Loader
 
 `window.Shizuku.download(url, relativeWebPath)` downloads an HTTPS URL into the module WebUI directory. This is meant for optional runtime caching of CSS, JS, fonts, and other WebUI assets.

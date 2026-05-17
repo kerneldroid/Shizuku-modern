@@ -1,7 +1,9 @@
 package rikka.shizuku.server.util;
 
+import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageInfo;
 import android.os.IBinder;
+import android.os.RemoteException;
 import android.os.ServiceManager;
 import android.util.Log;
 
@@ -17,36 +19,57 @@ public class Android17Compat {
     private static final String TAG = "ShizukuAndroid17Compat";
     private static final int DEVICE_ID_DEFAULT = 0; // Context.DEVICE_ID_DEFAULT
 
+    private static Object sPackageManager;
+    private static Method sGetInstalledPackagesMethod;
+    private static Method sGetPackageInfoMethod;
+    private static Method sGetApplicationInfoMethod;
+    
+    private static Object sPermissionManager;
+    private static Method sGrantRuntimePermissionMethod;
+    private static Method sRevokeRuntimePermissionMethod;
+    private static Method sCheckPermissionMethod;
+    private static Method sCheckPermissionUidMethod;
+
+    private static synchronized Object getPackageManager() throws Exception {
+        if (sPackageManager == null) {
+            IBinder binder = ServiceManager.getService("package");
+            Class<?> stubClass = Class.forName("android.content.pm.IPackageManager$Stub");
+            sPackageManager = stubClass.getDeclaredMethod("asInterface", IBinder.class).invoke(null, binder);
+        }
+        return sPackageManager;
+    }
+
+    private static synchronized Object getPermissionManager() throws Exception {
+        if (sPermissionManager == null) {
+            IBinder binder = ServiceManager.getService("permissionmgr");
+            Class<?> stubClass = Class.forName("android.permission.IPermissionManager$Stub");
+            sPermissionManager = stubClass.getDeclaredMethod("asInterface", IBinder.class).invoke(null, binder);
+        }
+        return sPermissionManager;
+    }
+
+    private static Method sGetListMethod;
+
     @SuppressWarnings("unchecked")
     public static List<PackageInfo> getInstalledPackages(long flags, int userId) {
         try {
             return PackageManagerApis.getInstalledPackagesNoThrow(flags, userId);
         } catch (NoSuchMethodError e) {
-            // Android 17 (API 37) compatibility fallback
             try {
-                IBinder binder = ServiceManager.getService("package");
-                Class<?> stubClass = Class.forName("android.content.pm.IPackageManager$Stub");
-                Object pm = stubClass.getDeclaredMethod("asInterface", IBinder.class).invoke(null, binder);
+                Object pm = getPackageManager();
+                if (pm == null) return new ArrayList<>();
 
-                for (Method method : pm.getClass().getMethods()) {
-                    if ("getInstalledPackages".equals(method.getName())) {
-                        Class<?>[] paramTypes = method.getParameterTypes();
-                        Object[] args = new Object[paramTypes.length];
-                        for (int i = 0; i < paramTypes.length; i++) {
-                            if (paramTypes[i] == long.class) {
-                                args[i] = flags;
-                            } else if (paramTypes[i] == int.class) {
-                                args[i] = userId;
-                            } else {
-                                args[i] = null;
-                            }
+                if (sGetInstalledPackagesMethod == null) {
+                    sGetInstalledPackagesMethod = findMethod(pm, "getInstalledPackages", long.class);
+                }
+
+                if (sGetInstalledPackagesMethod != null) {
+                    Object result = invokeMethod(pm, sGetInstalledPackagesMethod, flags, userId);
+                    if (result != null) {
+                        if (sGetListMethod == null) {
+                            sGetListMethod = result.getClass().getMethod("getList");
                         }
-                        
-                        Object result = method.invoke(pm, args);
-                        if (result != null) {
-                            Method getListMethod = result.getClass().getMethod("getList");
-                            return (List<PackageInfo>) getListMethod.invoke(result);
-                        }
+                        return (List<PackageInfo>) sGetListMethod.invoke(result);
                     }
                 }
             } catch (Throwable ex) {
@@ -56,40 +79,103 @@ public class Android17Compat {
         }
     }
 
+
+    public static PackageInfo getPackageInfo(String packageName, long flags, int userId) {
+        try {
+            return PackageManagerApis.getPackageInfoNoThrow(packageName, flags, userId);
+        } catch (NoSuchMethodError e) {
+            try {
+                Object pm = getPackageManager();
+                if (sGetPackageInfoMethod == null) {
+                    sGetPackageInfoMethod = findMethod(pm, "getPackageInfo", String.class, long.class);
+                }
+                if (sGetPackageInfoMethod != null) {
+                    return (PackageInfo) invokeMethod(pm, sGetPackageInfoMethod, packageName, flags, userId);
+                }
+            } catch (Throwable ex) {
+                Log.e(TAG, "Android 17 fallback for getPackageInfo failed", ex);
+            }
+            return null;
+        }
+    }
+
+    public static ApplicationInfo getApplicationInfo(String packageName, long flags, int userId) {
+        try {
+            return PackageManagerApis.getApplicationInfoNoThrow(packageName, flags, userId);
+        } catch (NoSuchMethodError e) {
+            try {
+                Object pm = getPackageManager();
+                if (sGetApplicationInfoMethod == null) {
+                    sGetApplicationInfoMethod = findMethod(pm, "getApplicationInfo", String.class, long.class);
+                }
+                if (sGetApplicationInfoMethod != null) {
+                    return (ApplicationInfo) invokeMethod(pm, sGetApplicationInfoMethod, packageName, flags, userId);
+                }
+            } catch (Throwable ex) {
+                Log.e(TAG, "Android 17 fallback for getApplicationInfo failed", ex);
+            }
+            return null;
+        }
+    }
+
+    public static int checkPermission(String permissionName, String packageName, int userId) {
+        try {
+            return PermissionManagerApis.checkPermission(permissionName, packageName, userId);
+        } catch (NoSuchMethodError e) {
+            try {
+                Object pm = getPermissionManager();
+                if (sCheckPermissionMethod == null) {
+                    sCheckPermissionMethod = findMethod(pm, "checkPermission", String.class, String.class);
+                }
+                if (sCheckPermissionMethod != null) {
+                    return (int) invokeMethod(pm, sCheckPermissionMethod, permissionName, packageName, userId);
+                }
+            } catch (Throwable ex) {
+                Log.e(TAG, "Android 17 fallback for checkPermission(String, String, int) failed", ex);
+            }
+            return android.content.pm.PackageManager.PERMISSION_DENIED;
+        } catch (RemoteException e) {
+            return android.content.pm.PackageManager.PERMISSION_DENIED;
+        }
+    }
+
+    public static int checkPermission(String permissionName, int uid) {
+        try {
+            return PermissionManagerApis.checkPermission(permissionName, uid);
+        } catch (NoSuchMethodError e) {
+            try {
+                Object pm = getPermissionManager();
+                if (sCheckPermissionUidMethod == null) {
+                    sCheckPermissionUidMethod = findMethod(pm, "checkPermission", String.class, int.class);
+                }
+                if (sCheckPermissionUidMethod != null) {
+                    Class<?>[] paramTypes = sCheckPermissionUidMethod.getParameterTypes();
+                    if (paramTypes.length == 3 && paramTypes[1] == int.class && paramTypes[2] == int.class) {
+                        // (String permission, int deviceId, int uid)
+                        return (int) sCheckPermissionUidMethod.invoke(pm, permissionName, DEVICE_ID_DEFAULT, uid);
+                    }
+                    return (int) sCheckPermissionUidMethod.invoke(pm, permissionName, uid);
+                }
+            } catch (Throwable ex) {
+                Log.e(TAG, "Android 17 fallback for checkPermission(String, int) failed", ex);
+            }
+            return android.content.pm.PackageManager.PERMISSION_DENIED;
+        } catch (RemoteException e) {
+            return android.content.pm.PackageManager.PERMISSION_DENIED;
+        }
+    }
+
     public static void grantRuntimePermission(String packageName, String permissionName, int userId) throws android.os.RemoteException {
         try {
             PermissionManagerApis.grantRuntimePermission(packageName, permissionName, userId);
         } catch (NoSuchMethodError e) {
             try {
-                IBinder binder = ServiceManager.getService("permissionmgr");
-                Class<?> stubClass = Class.forName("android.permission.IPermissionManager$Stub");
-                Object pm = stubClass.getDeclaredMethod("asInterface", IBinder.class).invoke(null, binder);
-
-                for (Method method : pm.getClass().getMethods()) {
-                    if ("grantRuntimePermission".equals(method.getName())) {
-                        Class<?>[] paramTypes = method.getParameterTypes();
-                        // Search for the method signature matching: String, String, int (deviceId), int (userId)
-                        if (paramTypes.length >= 3 && paramTypes[0] == String.class && paramTypes[1] == String.class) {
-                            Object[] args = new Object[paramTypes.length];
-                            args[0] = packageName;
-                            args[1] = permissionName;
-                            
-                            // For API 37+, it has deviceId and userId
-                            if (paramTypes.length == 4 && paramTypes[2] == int.class && paramTypes[3] == int.class) {
-                                args[2] = DEVICE_ID_DEFAULT; // deviceId
-                                args[3] = userId; // userId
-                            } else {
-                                // Just fill ints with userId as best effort fallback
-                                for (int i = 2; i < paramTypes.length; i++) {
-                                    if (paramTypes[i] == int.class) {
-                                        args[i] = userId;
-                                    }
-                                }
-                            }
-                            method.invoke(pm, args);
-                            return;
-                        }
-                    }
+                Object pm = getPermissionManager();
+                if (sGrantRuntimePermissionMethod == null) {
+                    sGrantRuntimePermissionMethod = findMethod(pm, "grantRuntimePermission", String.class, String.class);
+                }
+                if (sGrantRuntimePermissionMethod != null) {
+                    invokeMethod(pm, sGrantRuntimePermissionMethod, packageName, permissionName, userId);
                 }
             } catch (Throwable ex) {
                 Log.e(TAG, "Android 17 fallback for grantRuntimePermission failed", ex);
@@ -102,41 +188,65 @@ public class Android17Compat {
             PermissionManagerApis.revokeRuntimePermission(packageName, permissionName, userId);
         } catch (NoSuchMethodError e) {
             try {
-                IBinder binder = ServiceManager.getService("permissionmgr");
-                Class<?> stubClass = Class.forName("android.permission.IPermissionManager$Stub");
-                Object pm = stubClass.getDeclaredMethod("asInterface", IBinder.class).invoke(null, binder);
-
-                for (Method method : pm.getClass().getMethods()) {
-                    if ("revokeRuntimePermission".equals(method.getName())) {
-                        Class<?>[] paramTypes = method.getParameterTypes();
-                        if (paramTypes.length >= 3 && paramTypes[0] == String.class && paramTypes[1] == String.class) {
-                            Object[] args = new Object[paramTypes.length];
-                            args[0] = packageName;
-                            args[1] = permissionName;
-                            
-                            if (paramTypes.length == 5 && paramTypes[2] == int.class && paramTypes[3] == int.class && paramTypes[4] == String.class) {
-                                // revokeRuntimePermission(String, String, int deviceId, int userId, String reason)
-                                args[2] = DEVICE_ID_DEFAULT;
-                                args[3] = userId;
-                                args[4] = "shizuku";
-                            } else if (paramTypes.length == 4 && paramTypes[2] == int.class && paramTypes[3] == int.class) {
-                                args[2] = DEVICE_ID_DEFAULT;
-                                args[3] = userId;
-                            } else {
-                                for (int i = 2; i < paramTypes.length; i++) {
-                                    if (paramTypes[i] == int.class) {
-                                        args[i] = userId;
-                                    }
-                                }
-                            }
-                            method.invoke(pm, args);
-                            return;
-                        }
+                Object pm = getPermissionManager();
+                if (sRevokeRuntimePermissionMethod == null) {
+                    sRevokeRuntimePermissionMethod = findMethod(pm, "revokeRuntimePermission", String.class, String.class);
+                }
+                if (sRevokeRuntimePermissionMethod != null) {
+                    Class<?>[] paramTypes = sRevokeRuntimePermissionMethod.getParameterTypes();
+                    if (paramTypes.length == 5 && paramTypes[4] == String.class) {
+                        sRevokeRuntimePermissionMethod.invoke(pm, packageName, permissionName, DEVICE_ID_DEFAULT, userId, "shizuku");
+                    } else {
+                        invokeMethod(pm, sRevokeRuntimePermissionMethod, packageName, permissionName, userId);
                     }
                 }
             } catch (Throwable ex) {
                 Log.e(TAG, "Android 17 fallback for revokeRuntimePermission failed", ex);
             }
         }
+    }
+
+    private static Method findMethod(Object obj, String name, Class<?>... prefixTypes) {
+        for (Method method : obj.getClass().getMethods()) {
+            if (name.equals(method.getName())) {
+                Class<?>[] paramTypes = method.getParameterTypes();
+                if (paramTypes.length >= prefixTypes.length) {
+                    boolean match = true;
+                    for (int i = 0; i < prefixTypes.length; i++) {
+                        if (paramTypes[i] != prefixTypes[i]) {
+                            match = false;
+                            break;
+                        }
+                    }
+                    if (match) return method;
+                }
+            }
+        }
+        return null;
+    }
+
+    private static Object invokeMethod(Object obj, Method method, Object... prefixArgs) throws Exception {
+        Class<?>[] paramTypes = method.getParameterTypes();
+        Object[] args = new Object[paramTypes.length];
+        
+        int prefixLen = prefixArgs.length - 1;
+        int userIdIdx = prefixArgs.length - 1;
+        Object userId = prefixArgs[userIdIdx];
+
+        if (paramTypes.length == prefixArgs.length + 1) {
+            System.arraycopy(prefixArgs, 0, args, 0, prefixLen);
+            args[prefixLen] = DEVICE_ID_DEFAULT;
+            args[prefixLen + 1] = userId;
+            for (int i = prefixLen + 2; i < paramTypes.length; i++) {
+                if (paramTypes[i] == int.class) args[i] = 0;
+                else if (paramTypes[i] == String.class) args[i] = null;
+            }
+        } else {
+            System.arraycopy(prefixArgs, 0, args, 0, Math.min(prefixArgs.length, paramTypes.length));
+            for (int i = prefixArgs.length; i < paramTypes.length; i++) {
+                if (paramTypes[i] == int.class) args[i] = userId;
+            }
+        }
+        return method.invoke(obj, args);
     }
 }

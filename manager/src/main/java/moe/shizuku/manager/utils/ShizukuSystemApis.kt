@@ -1,63 +1,129 @@
 package moe.shizuku.manager.utils
 
+import android.content.pm.ApplicationInfo
 import android.content.pm.PackageInfo
 import android.content.pm.PackageManager
 import android.content.pm.ParceledListSlice
+import android.os.IBinder
 import android.os.RemoteException
+import android.os.ServiceManager
 import rikka.hidden.compat.PackageManagerApis
 import rikka.hidden.compat.PermissionManagerApis
 import rikka.hidden.compat.UserManagerApis
 import rikka.hidden.compat.util.SystemServiceBinder
 import rikka.shizuku.Shizuku
 import rikka.shizuku.ShizukuBinderWrapper
+import java.lang.reflect.Method
 
 object ShizukuSystemApis {
 
-    private var getInstalledPackagesMethod: java.lang.reflect.Method? = null
-    private var grantRuntimePermissionMethod: java.lang.reflect.Method? = null
-    private var revokeRuntimePermissionMethod: java.lang.reflect.Method? = null
+    private var sPackageManager: Any? = null
+    private var getInstalledPackagesMethod: Method? = null
+    private var getPackageInfoMethod: Method? = null
+    private var getApplicationInfoMethod: Method? = null
+    private var getListMethod: Method? = null
+
+    private var sPermissionManager: Any? = null
+    private var grantRuntimePermissionMethod: Method? = null
+    private var revokeRuntimePermissionMethod: Method? = null
+    private var checkPermissionMethod: Method? = null
 
     init {
         SystemServiceBinder.setOnGetBinderListener {
             return@setOnGetBinderListener ShizukuBinderWrapper(it)
         }
-        
-        try {
-            val packageManagerStub = Class.forName("android.content.pm.IPackageManager\$Stub")
-            val pmBinder = ShizukuBinderWrapper(android.os.ServiceManager.getService("package"))
-            val pm = packageManagerStub.getDeclaredMethod("asInterface", android.os.IBinder::class.java).invoke(null, pmBinder)
-            if (pm != null) {
-                for (method in pm.javaClass.methods) {
-                    if (method.name == "getInstalledPackages") {
-                        getInstalledPackagesMethod = method
-                        break
-                    }
-                }
-            }
-        } catch (e: Throwable) {
-        }
-        
-        try {
-            val permManagerStub = Class.forName("android.permission.IPermissionManager\$Stub")
-            val permBinder = ShizukuBinderWrapper(android.os.ServiceManager.getService("permissionmgr"))
-            val pm = permManagerStub.getDeclaredMethod("asInterface", android.os.IBinder::class.java).invoke(null, permBinder)
-            if (pm != null) {
-                for (method in pm.javaClass.methods) {
-                    if (method.name == "grantRuntimePermission") {
-                        val paramTypes = method.parameterTypes
-                        if (paramTypes.size >= 3 && paramTypes[0] == String::class.java && paramTypes[1] == String::class.java) {
-                            grantRuntimePermissionMethod = method
-                        }
-                    } else if (method.name == "revokeRuntimePermission") {
-                        val paramTypes = method.parameterTypes
-                        if (paramTypes.size >= 3 && paramTypes[0] == String::class.java && paramTypes[1] == String::class.java) {
-                            revokeRuntimePermissionMethod = method
+    }
+
+    @Synchronized
+    private fun getPackageManager(): Any? {
+        if (sPackageManager == null) {
+            try {
+                val packageManagerStub = Class.forName("android.content.pm.IPackageManager\$Stub")
+                val pmBinder = ShizukuBinderWrapper(ServiceManager.getService("package"))
+                sPackageManager = packageManagerStub.getDeclaredMethod("asInterface", IBinder::class.java).invoke(null, pmBinder)
+                sPackageManager?.let { pm ->
+                    for (method in pm.javaClass.methods) {
+                        when (method.name) {
+                            "getInstalledPackages" -> {
+                                if (method.parameterTypes.isNotEmpty() && method.parameterTypes[0] == Long::class.javaPrimitiveType) {
+                                    getInstalledPackagesMethod = method
+                                }
+                            }
+                            "getPackageInfo" -> {
+                                if (method.parameterTypes.size >= 2 && method.parameterTypes[0] == String::class.java && method.parameterTypes[1] == Long::class.javaPrimitiveType) {
+                                    getPackageInfoMethod = method
+                                }
+                            }
+                            "getApplicationInfo" -> {
+                                if (method.parameterTypes.size >= 2 && method.parameterTypes[0] == String::class.java && method.parameterTypes[1] == Long::class.javaPrimitiveType) {
+                                    getApplicationInfoMethod = method
+                                }
+                            }
                         }
                     }
                 }
+            } catch (e: Throwable) {
             }
-        } catch (e: Throwable) {
         }
+        return sPackageManager
+    }
+
+    @Synchronized
+    private fun getPermissionManager(): Any? {
+        if (sPermissionManager == null) {
+            try {
+                val permManagerStub = Class.forName("android.permission.IPermissionManager\$Stub")
+                val permBinder = ShizukuBinderWrapper(ServiceManager.getService("permissionmgr"))
+                sPermissionManager = permManagerStub.getDeclaredMethod("asInterface", IBinder::class.java).invoke(null, permBinder)
+                sPermissionManager?.let { pm ->
+                    for (method in pm.javaClass.methods) {
+                        when (method.name) {
+                            "grantRuntimePermission" -> {
+                                if (method.parameterTypes.size >= 3 && method.parameterTypes[0] == String::class.java) {
+                                    grantRuntimePermissionMethod = method
+                                }
+                            }
+                            "revokeRuntimePermission" -> {
+                                if (method.parameterTypes.size >= 3 && method.parameterTypes[0] == String::class.java) {
+                                    revokeRuntimePermissionMethod = method
+                                }
+                            }
+                            "checkPermission" -> {
+                                if (method.parameterTypes.size >= 3 && method.parameterTypes[0] == String::class.java) {
+                                    checkPermissionMethod = method
+                                }
+                            }
+                        }
+                    }
+                }
+            } catch (e: Throwable) {
+            }
+        }
+        return sPermissionManager
+    }
+
+    private fun invokeCompat(method: Method?, target: Any?, vararg args: Any?): Any? {
+        if (method == null || target == null) return null
+        val paramTypes = method.parameterTypes
+        val finalArgs = arrayOfNulls<Any>(paramTypes.size)
+        
+        if (paramTypes.size == args.size + 1) {
+            val lastIdx = args.size - 1
+            System.arraycopy(args, 0, finalArgs, 0, lastIdx)
+            finalArgs[lastIdx] = 0 // DEVICE_ID_DEFAULT
+            finalArgs[lastIdx + 1] = args[lastIdx]
+            
+            for (i in (lastIdx + 2) until paramTypes.size) {
+                if (paramTypes[i] == Int::class.javaPrimitiveType) finalArgs[i] = 0
+                else if (paramTypes[i] == String::class.java) finalArgs[i] = null
+            }
+        } else {
+            System.arraycopy(args, 0, finalArgs, 0, Math.min(args.size, paramTypes.size))
+            for (i in args.size until paramTypes.size) {
+                if (paramTypes[i] == Int::class.javaPrimitiveType) finalArgs[i] = args.lastOrNull()
+            }
+        }
+        return method.invoke(target, *finalArgs)
     }
 
     private val users = arrayListOf<UserInfoCompat>()
@@ -94,6 +160,7 @@ object ShizukuSystemApis {
         )
     }
 
+    @Suppress("UNCHECKED_CAST")
     fun getInstalledPackages(flags: Long, userId: Int): List<PackageInfo> {
         if (!Shizuku.pingBinder()) {
             return ArrayList()
@@ -105,35 +172,60 @@ object ShizukuSystemApis {
                 listSlice.list
             } else ArrayList()
         } catch (e: NoSuchMethodError) {
-            val method = getInstalledPackagesMethod ?: return ArrayList()
-            val binder = rikka.shizuku.ShizukuBinderWrapper(
-                android.os.ServiceManager.getService("package")
-            )
-            val stubClass = Class.forName("android.content.pm.IPackageManager\$Stub")
-            val pm = stubClass.getDeclaredMethod("asInterface", android.os.IBinder::class.java).invoke(null, binder)
-
-            val paramTypes = method.parameterTypes
-            val args = Array<Any?>(paramTypes.size) { null }
-            for (i in paramTypes.indices) {
-                when (paramTypes[i]) {
-                    Long::class.javaPrimitiveType -> args[i] = flags
-                    Int::class.javaPrimitiveType -> args[i] = userId
+            try {
+                val pm = getPackageManager()
+                val result = invokeCompat(getInstalledPackagesMethod, pm, flags, userId)
+                if (result != null) {
+                    if (getListMethod == null) {
+                        getListMethod = result.javaClass.getMethod("getList")
+                    }
+                    return (getListMethod!!.invoke(result) as List<PackageInfo>)
                 }
-            }
-            val result = method.invoke(pm, *args)
-            return if (result != null) {
-                (result as ParceledListSlice<PackageInfo>).list
-            } else ArrayList()
+            } catch (t: Throwable) {}
+            return ArrayList()
         } catch (tr: RemoteException) {
             throw RuntimeException(tr.message, tr)
         }
     }
 
+    fun getPackageInfo(packageName: String, flags: Long, userId: Int): PackageInfo? {
+        if (!Shizuku.pingBinder()) return null
+        try {
+            return PackageManagerApis.getPackageInfo(packageName, flags, userId)
+        } catch (e: NoSuchMethodError) {
+            try {
+                val pm = getPackageManager()
+                return invokeCompat(getPackageInfoMethod, pm, packageName, flags, userId) as? PackageInfo
+            } catch (t: Throwable) {}
+            return null
+        }
+    }
+
+    fun getApplicationInfo(packageName: String, flags: Long, userId: Int): ApplicationInfo? {
+        if (!Shizuku.pingBinder()) return null
+        try {
+            return PackageManagerApis.getApplicationInfo(packageName, flags, userId)
+        } catch (e: NoSuchMethodError) {
+            try {
+                val pm = getPackageManager()
+                return invokeCompat(getApplicationInfoMethod, pm, packageName, flags, userId) as? ApplicationInfo
+            } catch (t: Throwable) {}
+            return null
+        }
+    }
+
     fun checkPermission(permName: String, pkgName: String, userId: Int): Int {
-        return if (!Shizuku.pingBinder()) {
-            PackageManager.PERMISSION_DENIED
-        } else try {
-            PermissionManagerApis.checkPermission(permName, pkgName, userId)
+        if (!Shizuku.pingBinder()) {
+            return PackageManager.PERMISSION_DENIED
+        }
+        try {
+            return PermissionManagerApis.checkPermission(permName, pkgName, userId)
+        } catch (e: NoSuchMethodError) {
+            try {
+                val pm = getPermissionManager()
+                return invokeCompat(checkPermissionMethod, pm, permName, pkgName, userId) as? Int ?: PackageManager.PERMISSION_DENIED
+            } catch (t: Throwable) {}
+            return PackageManager.PERMISSION_DENIED
         } catch (tr: RemoteException) {
             throw RuntimeException(tr.message, tr)
         }
@@ -147,27 +239,9 @@ object ShizukuSystemApis {
             PermissionManagerApis.grantRuntimePermission(packageName, permissionName, userId)
         } catch (e: NoSuchMethodError) {
             try {
-                val method = grantRuntimePermissionMethod ?: return
-                val binder = rikka.shizuku.ShizukuBinderWrapper(
-                    android.os.ServiceManager.getService("permissionmgr")
-                )
-                val stubClass = Class.forName("android.permission.IPermissionManager\$Stub")
-                val pm = stubClass.getDeclaredMethod("asInterface", android.os.IBinder::class.java).invoke(null, binder)
-                val paramTypes = method.parameterTypes
-                val args = Array<Any?>(paramTypes.size) { null }
-                args[0] = packageName
-                args[1] = permissionName
-                if (paramTypes.size == 4 && paramTypes[2] == Int::class.javaPrimitiveType && paramTypes[3] == Int::class.javaPrimitiveType) {
-                    args[2] = 0 // DEVICE_ID_DEFAULT
-                    args[3] = userId
-                } else {
-                    for (i in 2 until paramTypes.size) {
-                        if (paramTypes[i] == Int::class.javaPrimitiveType) args[i] = userId
-                    }
-                }
-                method.invoke(pm, *args)
+                val pm = getPermissionManager()
+                invokeCompat(grantRuntimePermissionMethod, pm, packageName, permissionName, userId)
             } catch (ex: Throwable) {
-                // Ignore fallback failure
             }
         } catch (tr: RemoteException) {
             throw RuntimeException(tr.message, tr)
@@ -182,31 +256,14 @@ object ShizukuSystemApis {
             PermissionManagerApis.revokeRuntimePermission(packageName, permissionName, userId)
         } catch (e: NoSuchMethodError) {
             try {
-                val method = revokeRuntimePermissionMethod ?: return
-                val binder = rikka.shizuku.ShizukuBinderWrapper(
-                    android.os.ServiceManager.getService("permissionmgr")
-                )
-                val stubClass = Class.forName("android.permission.IPermissionManager\$Stub")
-                val pm = stubClass.getDeclaredMethod("asInterface", android.os.IBinder::class.java).invoke(null, binder)
-                val paramTypes = method.parameterTypes
-                val args = Array<Any?>(paramTypes.size) { null }
-                args[0] = packageName
-                args[1] = permissionName
-                if (paramTypes.size == 5 && paramTypes[2] == Int::class.javaPrimitiveType && paramTypes[3] == Int::class.javaPrimitiveType && paramTypes[4] == String::class.java) {
-                    args[2] = 0 // DEVICE_ID_DEFAULT
-                    args[3] = userId
-                    args[4] = "shizuku"
-                } else if (paramTypes.size == 4 && paramTypes[2] == Int::class.javaPrimitiveType && paramTypes[3] == Int::class.javaPrimitiveType) {
-                    args[2] = 0 // DEVICE_ID_DEFAULT
-                    args[3] = userId
+                val pm = getPermissionManager()
+                val method = revokeRuntimePermissionMethod
+                if (method != null && method.parameterTypes.size == 5 && method.parameterTypes[4] == String::class.java) {
+                    method.invoke(pm, packageName, permissionName, 0, userId, "shizuku")
                 } else {
-                    for (i in 2 until paramTypes.size) {
-                        if (paramTypes[i] == Int::class.javaPrimitiveType) args[i] = userId
-                    }
+                    invokeCompat(method, pm, packageName, permissionName, userId)
                 }
-                method.invoke(pm, *args)
             } catch (ex: Throwable) {
-                // Ignore fallback failure
             }
         } catch (tr: RemoteException) {
             throw RuntimeException(tr.message, tr)

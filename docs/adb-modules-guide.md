@@ -134,17 +134,6 @@ WebView internet, WebUI download, `usesShellBridge=true`, and ReCommand gates.
 Core safety limits such as path traversal rejection, process timeouts, output
 caps, and download size caps still apply.
 
-## ReCommand and AI Checker
-
-ReCommand can show a confirmation dialog before WebUI shell execution and Action
-execution. The dialog uses icon-only expand/collapse and copy controls, and the
-expand/collapse control is shown only for long commands.
-
-The optional Gemini checker is hidden by default. In Settings, tap the
-translation contributors row five times quickly to reveal the AI settings row and
-the Gemini star in ReCommand dialogs. Repeat the same five-tap gesture to hide it
-again. The Gemini API key is stored encrypted with Android Keystore.
-
 ## Safety Limits
 
 - ZIP path traversal is rejected.
