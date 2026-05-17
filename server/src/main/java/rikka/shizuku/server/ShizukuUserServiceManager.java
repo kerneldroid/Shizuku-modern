@@ -4,20 +4,15 @@ import android.content.pm.PackageInfo;
 import android.util.ArrayMap;
 
 import java.io.File;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
 import java.util.Map;
 
 import moe.shizuku.starter.ServiceStarter;
-import rikka.hidden.compat.PackageManagerApis;
 import rikka.hidden.compat.UserManagerApis;
-import rikka.shizuku.server.util.UserHandleCompat;
+import rikka.shizuku.server.util.Android17Compat;
 
 public class ShizukuUserServiceManager extends UserServiceManager {
 
     private final Map<UserServiceRecord, ApkChangedListener> apkChangedListeners = new ArrayMap<>();
-    private final Map<String, List<UserServiceRecord>> userServiceRecords = Collections.synchronizedMap(new ArrayMap<>());
 
     public ShizukuUserServiceManager() {
         super();
@@ -49,7 +44,7 @@ public class ShizukuUserServiceManager extends UserServiceManager {
                 String newSourceDir = null;
 
                 for (int userId : UserManagerApis.getUserIdsNoThrow()) {
-                    PackageInfo pi = PackageManagerApis.getPackageInfoNoThrow(packageName, 0, userId);
+                    PackageInfo pi = Android17Compat.getPackageInfo(packageName, 0, userId);
                     if (pi != null && pi.applicationInfo != null && pi.applicationInfo.sourceDir != null) {
                         newSourceDir = pi.applicationInfo.sourceDir;
                         break;
